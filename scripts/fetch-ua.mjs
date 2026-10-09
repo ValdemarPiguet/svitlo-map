@@ -64,7 +64,8 @@ function parseAlerts(html) {
     for (const m of chunk.matchAll(/data-start="(\d{2}:\d{2})" data-end="(\d{2}:\d{2})"[^>]*class="[^"]*\bstts(\d)\b/g)) {
       let st = min(m[1]), e = min(m[2]);
       if (e === 0 && st > 0) e = 1440;                       // «22:00 - 00:00» означає кінець доби
-      if (e <= st || e > 1440) throw new Error(`група ${id}: дивний інтервал ${m[1]}-${m[2]}`);
+      if (e === st || st >= 1440) continue;                  // нульової довжини, напр. «24:00 - 24:00»: на сторінці Черкаської області такі трапляються
+      if (e < st || e > 1440) throw new Error(`група ${id}: дивний інтервал ${m[1]}-${m[2]}`);
       const code = STATUS[m[3]] ?? (unknown.add(m[3]), 'unk');
       for (let k = Math.floor(st / 30); k < Math.ceil(e / 30); k++) sl[k] = RANK[code] > (RANK[sl[k]] ?? 0) ? code : sl[k] ?? code;   // відключення має пріоритет над «немає даних» і «є світло»
     }
