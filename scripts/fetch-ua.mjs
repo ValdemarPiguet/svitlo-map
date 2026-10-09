@@ -56,16 +56,17 @@ function parseAlerts(html) {
   const op = html.match(/за інформацією\s*<b>([^<]*)<\/b>/); const operator = op ? op[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#0?39;/g, "'").trim() : '';
   const body = html.slice(html.indexOf('id="shedule"'));
   const parts = body.split(/data-group-id="r\d+g([\d-]+)"/);
-  const groups = {}, STATUS = { 0: 'on', 2: 'off' }, unknown = new Set(), skipped = [];
+  const groups = {}, STATUS = { 0: 'on', 2: 'off' }, RANK = { on: 1, unk: 2, off: 3 }, unknown = new Set(), skipped = [];
   const min = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   for (let i = 1; i < parts.length; i += 2) {
     const id = parts[i].replace('-', '.'), chunk = parts[i + 1].split('<div class="stat">')[0];
     const sl = new Array(48).fill(null);
     for (const m of chunk.matchAll(/data-start="(\d{2}:\d{2})" data-end="(\d{2}:\d{2})"[^>]*class="[^"]*\bstts(\d)\b/g)) {
-      const s = min(m[1]), e = min(m[2]);
-      if (s % 30 || e % 30 || e <= s) throw new Error(`група ${id}: дивний інтервал ${m[1]}-${m[2]}`);
+      let st = min(m[1]), e = min(m[2]);
+      if (e === 0 && st > 0) e = 1440;                       // «22:00 - 00:00» означає кінець доби
+      if (e <= st || e > 1440) throw new Error(`група ${id}: дивний інтервал ${m[1]}-${m[2]}`);
       const code = STATUS[m[3]] ?? (unknown.add(m[3]), 'unk');
-      for (let k = s / 30; k < e / 30; k++) sl[k] = code;
+      for (let k = Math.floor(st / 30); k < Math.ceil(e / 30); k++) sl[k] = RANK[code] > (RANK[sl[k]] ?? 0) ? code : sl[k] ?? code;   // відключення має пріоритет над «немає даних» і «є світло»
     }
     const gaps = sl.filter(x => x === null).length;
     if (gaps === 48) { skipped.push(id); continue; }
@@ -126,9 +127,10 @@ for (const [slug, name, doFetch = true, note] of REGIONS) {
     const old = prev?.regions?.[slug];
     if (!(e instanceof NoSchedule) && ++hardFails >= 4) { abort = true; console.error('Чотири збої поспіль: схоже, джерело недоступне, зупиняю обхід.'); }
     else if (e instanceof NoSchedule) hardFails = 0;
-    if (e instanceof NoSchedule) { regions[slug] = { name, status: 'nodata', note: 'Графік не опублікований', queues: [] }; console.log('немає графіка:', e.message); }
-    else if (old && old.queues?.length) { regions[slug] = { ...old, status: 'stale', note: 'Не вдалося оновити, показано попередні дані' }; console.log('ПОМИЛКА, лишаю попередні дані:', e.message); }
-    else { regions[slug] = { name, status: 'nodata', note: 'Дані тимчасово недоступні', queues: [] }; console.log('ПОМИЛКА:', e.message); }
+    const why = String(e.message || e).slice(0, 160);
+    if (e instanceof NoSchedule) { regions[slug] = { name, status: 'nodata', note: 'Графік не опублікований', error: why, queues: [] }; console.log('немає графіка:', e.message); }
+    else if (old && old.queues?.length) { regions[slug] = { ...old, status: 'stale', note: 'Не вдалося оновити, показано попередні дані', error: why }; console.log('ПОМИЛКА, лишаю попередні дані:', e.message); }
+    else { regions[slug] = { name, status: 'nodata', note: 'Дані тимчасово недоступні', error: why, queues: [] }; console.log('ПОМИЛКА:', e.message); }
   }
   await sleep(PAUSE);
 }
