@@ -1,0 +1,30 @@
+name: Update outage data
+
+on:
+  schedule:
+    - cron: '0 3,11,18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Fetch data
+        run: node scripts/fetch-ua.mjs data/ua.json
+      - name: Commit changes
+        run: |
+          git config user.name "svitlo-bot"
+          git config user.email "svitlo-bot@users.noreply.github.com"
+          git add data/ua.json
+          if git diff --cached --quiet; then echo "Без змін"; else git commit -m "Update data $(date -u +%Y-%m-%dT%H:%MZ)" && git push; fi
