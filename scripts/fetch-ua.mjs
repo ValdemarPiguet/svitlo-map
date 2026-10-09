@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 const ALERTS = (process.env.ALERTS_BASE || 'https://alerts.org.ua').replace(/\/$/, '');
 const SVITLO = process.env.SVITLO_API || 'https://dtek-api.svitlo-proxy.workers.dev/';
 const OUT = process.argv[2] || 'data/ua.json';
-const PAUSE = Number(process.env.PAUSE_MS ?? 500);
+const PAUSE = Number(process.env.PAUSE_MS ?? 800);
 const UA = 'svitlo-map/0.4 (open-source outage map; a few requests per run)';
 
 // slug = адреса на alerts.org.ua; fetch:false — дані не публікуються взагалі
@@ -30,7 +30,7 @@ async function get(url, json = false, tries = 3) {
   for (let i = 1; i <= tries; i++) {
     try {
       const res = await fetch(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(30000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) { if (res.status === 429 || res.status >= 500) await sleep(4000); throw new Error(`HTTP ${res.status}`); }
       return json ? await res.json() : await res.text();
     } catch (e) { last = e; console.error(`  ${url} спроба ${i}/${tries}: ${e.message}`); if (i < tries) await sleep(3000 * i); }
   }
@@ -53,10 +53,10 @@ function parseAlerts(html) {
   if (!dm) throw new NoSchedule('немає блоку розкладу');
   const um = html.match(/Оновлено:\s*(\d{2})\.(\d{2})\.(\d{4})\s*о\s*(\d{1,2}):(\d{2})/);
   const updatedAt = um ? kyivToUtc(+um[3], +um[2], +um[1], +um[4], +um[5]).toISOString() : null;
-  const op = html.match(/за інформацією\s*<b>([^<]*)<\/b>/); const operator = op ? op[1].trim() : '';
+  const op = html.match(/за інформацією\s*<b>([^<]*)<\/b>/); const operator = op ? op[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#0?39;/g, "'").trim() : '';
   const body = html.slice(html.indexOf('id="shedule"'));
-  const parts = body.split(/data-group-id="r\d+g(\d+(?:-\d+)?)"/);
-  const groups = {}, STATUS = { 0: 'on', 2: 'off' }, unknown = new Set();
+  const parts = body.split(/data-group-id="r\d+g([\d-]+)"/);
+  const groups = {}, STATUS = { 0: 'on', 2: 'off' }, unknown = new Set(), skipped = [];
   const min = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   for (let i = 1; i < parts.length; i += 2) {
     const id = parts[i].replace('-', '.'), chunk = parts[i + 1].split('<div class="stat">')[0];
@@ -67,11 +67,13 @@ function parseAlerts(html) {
       const code = STATUS[m[3]] ?? (unknown.add(m[3]), 'unk');
       for (let k = s / 30; k < e / 30; k++) sl[k] = code;
     }
-    if (sl.some(x => x === null)) throw new Error(`група ${id}: слоти не покриті повністю`);
-    groups[id] = sl;
+    const gaps = sl.filter(x => x === null).length;
+    if (gaps === 48) { skipped.push(id); continue; }
+    if (gaps) console.error(`  група ${id}: ${gaps} слотів без даних позначено як «немає даних»`);
+    groups[id] = sl.map(x => x ?? 'unk');
   }
   if (unknown.size) console.error('  невідомі коди статусу stts' + [...unknown].join(',stts') + ' позначено як «немає даних»');
-  if (!Object.keys(groups).length) throw new NoSchedule('груп не знайдено');
+  if (!Object.keys(groups).length) throw new NoSchedule(`груп із інтервалами не знайдено (сторінка ${html.length} байт, груп у розмітці: ${(parts.length - 1) / 2})`);
   return { date: dm[1], updatedAt, operator, groups };
 }
 const enc = a => a.map(s => s === 'on' ? '1' : s === 'off' ? '0' : '?').join('');   // 48 символів на добу
@@ -124,7 +126,7 @@ for (const [slug, name, doFetch = true, note] of REGIONS) {
     const old = prev?.regions?.[slug];
     if (!(e instanceof NoSchedule) && ++hardFails >= 4) { abort = true; console.error('Чотири збої поспіль: схоже, джерело недоступне, зупиняю обхід.'); }
     else if (e instanceof NoSchedule) hardFails = 0;
-    if (e instanceof NoSchedule) { regions[slug] = { name, status: 'nodata', note: 'Графік не опублікований', queues: [] }; console.log('немає графіка'); }
+    if (e instanceof NoSchedule) { regions[slug] = { name, status: 'nodata', note: 'Графік не опублікований', queues: [] }; console.log('немає графіка:', e.message); }
     else if (old && old.queues?.length) { regions[slug] = { ...old, status: 'stale', note: 'Не вдалося оновити, показано попередні дані' }; console.log('ПОМИЛКА, лишаю попередні дані:', e.message); }
     else { regions[slug] = { name, status: 'nodata', note: 'Дані тимчасово недоступні', queues: [] }; console.log('ПОМИЛКА:', e.message); }
   }
