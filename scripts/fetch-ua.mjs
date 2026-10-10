@@ -15,7 +15,7 @@ const UA = 'svitlo-map/0.4 (open-source outage map; a few requests per run)';
 const REGIONS = [
   ['cherkaska-oblast', 'Черкаська область'], ['chernigivska-oblast', 'Чернігівська область'], ['chernivetcka-oblast', 'Чернівецька область'],
   ['dnipropetrovska-oblast', 'Дніпропетровська область'], ['ivano-frankivska-oblast', 'Івано-Франківська область'], ['harkivska-oblast', 'Харківська область'],
-  ['hersonska-oblast', 'Херсонська область'], ['hmelnitcka-oblast', 'Хмельницька область'], ['kyivska-oblast', 'Київська область'],
+  ['hersonska-oblast', 'Херсонська область'], ['hmelnitcka-oblast', 'Хмельницька область'], ['kyivska-oblast', 'Київська область'], ['kyiv', 'м. Київ'],
   ['kirovogradska-oblast', 'Кіровоградська область'], ['lvivska-oblast', 'Львівська область'], ['mykolaivska-oblast', 'Миколаївська область'],
   ['odeska-oblast', 'Одеська область'], ['poltavska-oblast', 'Полтавська область'], ['rivnenska-oblast', 'Рівненська область'],
   ['sumska-oblast', 'Сумська область'], ['ternopilska-oblast', 'Тернопільська область'], ['vinnytcka-oblast', 'Вінницька область'],
@@ -91,6 +91,23 @@ async function svitlo() {
   return { date, emergency: Boolean(region.emergency), groups: Object.fromEntries(Object.keys(region.schedule || {}).map(id => [id, slots(region.schedule[id]?.[date])])) };
 }
 
+// ---- історія: скільки годин без світла за ОПУБЛІКОВАНИМИ графіками (не фактичні відключення)
+const HIST_PATH = OUT.replace(/[^/\\]*$/, 'history.json');
+const BACKFILL = Number(process.env.BACKFILL_DAYS || 0);
+function statsFromGroups(groups, u) {
+  const q = {};
+  for (const [id, arr] of Object.entries(groups)) {
+    const known = arr.filter(x => x !== 'unk').length;
+    if (known < 24) continue;
+    q[id] = Math.round(arr.filter(x => x === 'off').length / 2 * (48 / known) * 10) / 10;
+  }
+  const v = Object.values(q);
+  if (!v.length) return null;
+  return { avg: Math.round(v.reduce((a, b) => a + b, 0) / v.length * 10) / 10, min: Math.min(...v), max: Math.max(...v), n: v.length, q, u: u || null };
+}
+const hist = (() => { try { const h = JSON.parse(readFileSync(HIST_PATH, 'utf8')); return h && h.days ? h : { version: 1, days: {} }; } catch { return { version: 1, days: {} }; } })();
+const histBatch = [];
+
 // ---- основний потік
 const prev = existsSync(OUT) ? (() => { try { return JSON.parse(readFileSync(OUT, 'utf8')); } catch { return null; } })() : null;
 const regions = {}; let okCount = 0, hardFails = 0, abort = false;   // abort: сайт, схоже, повністю недоступний
@@ -123,6 +140,7 @@ for (const [slug, name, doFetch = true, note] of REGIONS) {
       }
     }
     regions[slug] = reg; okCount++; hardFails = 0;
+    histBatch.push(...days.map(d => ({ slug, date: d.date, groups: d.groups, u: d.updatedAt })));
     console.log(`OK, груп ${ids.length}, днів ${days.length}${reg.check ? (reg.check.match ? ', звірка збіг' : ', розбіжності ' + reg.check.diff.join(',')) : ''}`);
   } catch (e) {
     const old = prev?.regions?.[slug];
@@ -146,6 +164,31 @@ if (regions['kyivska-oblast'].status !== 'ok' && sv) {
 }
 
 if (!okCount) throw new Error('Жодну область не вдалося оновити');
+
+// одноразове заповнення історії за минулі дні (BACKFILL_DAYS=6): корисно при першому запуску
+if (BACKFILL > 0 && !abort) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
+  console.log(`Заповнюю історію за ${BACKFILL} днів…`);
+  for (const [slug, , doFetch] of REGIONS) {
+    if (doFetch === false) continue;
+    for (let k = 1; k <= BACKFILL; k++) {
+      const dt = addDays(today, -k);
+      if (hist.days[dt]?.[slug]) continue;
+      try {
+        const r = parseAlerts(await get(`${ALERTS}/${slug}/${dt}.html`, false, 1));
+        if (r.date === dt) histBatch.push({ slug, date: dt, groups: r.groups, u: r.updatedAt });
+      } catch { /* для цього дня даних немає */ }
+      await sleep(PAUSE);
+    }
+  }
+}
+for (const { slug, date, groups, u } of histBatch) {
+  const st = statsFromGroups(groups, u);
+  if (st) (hist.days[date] ||= {})[slug] = st;
+}
+const cutoff = addDays(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date()), -120);
+for (const d of Object.keys(hist.days)) if (d < cutoff) delete hist.days[d];
+writeFileSync(HIST_PATH, JSON.stringify(hist));
 writeFileSync(OUT, JSON.stringify({
   fetchedAt: new Date().toISOString(),
   source: { name: 'alerts.org.ua', url: 'https://alerts.org.ua/' },
