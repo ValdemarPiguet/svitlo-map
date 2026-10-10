@@ -1,0 +1,38 @@
+name: Update outage data
+
+on:
+  schedule:
+    # 3 рази на добу. Час у UTC: 03:00, 11:00, 18:00
+    # = 06:00, 14:00, 21:00 за Києвом влітку (взимку на годину раніше)
+    - cron: '0 3,11,18 * * *'
+  workflow_dispatch:   # кнопка «Run workflow» для ручного оновлення
+    inputs:
+      backfill:
+        description: 'Заповнити історію за N минулих днів (0 = не потрібно)'
+        default: '0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Fetch data
+        env:
+          BACKFILL_DAYS: ${{ github.event.inputs.backfill }}
+        run: node scripts/fetch-ua.mjs data/ua.json
+      - name: Commit changes
+        run: |
+          git config user.name "svitlo-bot"
+          git config user.email "svitlo-bot@users.noreply.github.com"
+          git add data/ua.json data/history.json
+          if git diff --cached --quiet; then echo "Без змін"; else git commit -m "Update data $(date -u +%Y-%m-%dT%H:%MZ)" && git push; fi
