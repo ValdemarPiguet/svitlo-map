@@ -446,7 +446,7 @@ function applyDN(){hemi.intensity=.45+.35*dk;hemi.color.copy(SKYN).lerp(SKYD,dk)
 
 
 // ===== ПОПЕРЕДЖЕННЯ ПРО ЕКСТРЕНІ ВІДКЛЮЧЕННЯ (приходять з Worker; вмикаєте їх ви в Telegram) =====
-var ALERTS_URL='';   // ← адреса Worker без слеша в кінці (та сама, що й для форми); порожньо = лише ознака з svitlo.live
+var ALERTS_URL='https://quiet-brook-27e0.vetalikskorin.workers.dev';   // ← адреса Worker без слеша в кінці (та сама, що й для форми); порожньо = лише ознака з svitlo.live
 function regName(slug){const o=OBL.find(x=>x.slug===slug);return o?o.name.replace(' область',''):slug}
 function emgItems(slug){const out=ALERTS.filter(a=>a.scope==='all'||(Array.isArray(a.scope)&&a.scope.includes(slug)));
  const r=REG[slug];if(!out.length&&r&&r.emergency)out.push({id:'auto:'+slug,scope:[slug],title:'Екстрені відключення',text:'За даними svitlo.live в області можуть діяти екстрені відключення. Графіки можуть не діяти.',since:null,source:{name:'svitlo.live',url:'https://svitlo.live/'},auto:true});return out}
@@ -467,7 +467,7 @@ async function pullAlerts(){if(!ALERTS_URL)return;try{const r=await fetch(ALERTS
  const nx=j.items.filter(a=>a&&a.id&&a.scope&&(!a.expires||Date.parse(a.expires)>Date.now()));if(JSON.stringify(nx)!==JSON.stringify(ALERTS)){ALERTS=nx;refresh()}}catch(e){}}
 pullAlerts();
 // ===== ЗВОРОТНИЙ ЗВ'ЯЗОК (форма надсилає лист через сервіс форм; адреса пошти на сторінці не публікується) =====
-const FBK_URL='';   // ← адреса вашого Cloudflare Worker (надсилає у Telegram), напр. https://svitlo-feedback.ВАШ.workers.dev
+const FBK_URL='https://quiet-brook-27e0.vetalikskorin.workers.dev/';   // ← адреса вашого Cloudflare Worker (надсилає у Telegram), напр. https://svitlo-feedback.ВАШ.workers.dev
 const FBK_KEY='';   // запасний варіант: Access Key з web3forms.com (лист на пошту). Працює, лише якщо FBK_URL порожній.
 (function(){
  const m=$('#fbm'),btn=$('#fbk'),st=$('#fbst'),send=$('#fbsend'),LS=(k,v)=>{try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}};
