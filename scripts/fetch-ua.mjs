@@ -202,6 +202,7 @@ for (const d of Object.keys(hist.days)) if (d < cutoff) delete hist.days[d];
 writeFileSync(HIST_PATH, JSON.stringify(hist));
 writeFileSync(OUT, JSON.stringify({
   fetchedAt: new Date().toISOString(),
+  parser: 'v5-labels',                                   // версія розбору: за цим полем у ua.json видно, який скрипт створив дані
   source: { name: 'alerts.org.ua', url: 'https://alerts.org.ua/' },
   regions
 }));
