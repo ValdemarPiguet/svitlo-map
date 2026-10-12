@@ -56,17 +56,26 @@ function parseAlerts(html) {
   const op = html.match(/за інформацією\s*<b>([^<]*)<\/b>/); const operator = op ? op[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#0?39;/g, "'").trim() : '';
   const body = html.slice(html.indexOf('id="shedule"'));
   const parts = body.split(/data-group-id="r\d+g([\d-]+)"/);
-  const groups = {}, STATUS = { 0: 'on', 2: 'off' }, RANK = { on: 1, unk: 2, off: 3 }, unknown = new Set(), skipped = []; let gapTotal = 0;
+  const groups = {}, STATUS = { 0: 'on', 2: 'off' }, RANK = { on: 1, unk: 2, off: 3 }, unknown = new Map(), skipped = []; let gapTotal = 0;
   const min = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   for (let i = 1; i < parts.length; i += 2) {
     const id = parts[i].replace('-', '.'), chunk = parts[i + 1].split('<div class="stat">')[0];
     const sl = new Array(48).fill(null);
-    for (const m of chunk.matchAll(/data-start="(\d{2}:\d{2})" data-end="(\d{2}:\d{2})"[^>]*class="[^"]*\bstts(\d)\b/g)) {
-      let st = min(m[1]), e = min(m[2]);
+    for (const m of chunk.matchAll(/<div\b([^>]*\bdata-start="[^"]*"[^>]*)>([\s\S]{0,240}?)<\/div>/g)) {      // порядок атрибутів не важливий
+      const at = m[1], s0 = at.match(/data-start="(\d{1,2}:\d{2})"/), e0 = at.match(/data-end="(\d{1,2}:\d{2})"/);
+      if (!s0 || !e0) continue;
+      let st = min(s0[1]), e = min(e0[1]);
       if (e === 0 && st > 0) e = 1440;                       // «22:00 - 00:00» означає кінець доби
       if (e === st || st >= 1440) continue;                  // нульової довжини, напр. «24:00 - 24:00»: на сторінці Черкаської області такі трапляються
-      if (e < st || e > 1440) throw new Error(`група ${id}: дивний інтервал ${m[1]}-${m[2]}`);
-      const code = STATUS[m[3]] ?? (unknown.add(m[3]), 'unk');
+      if (e < st || e > 1440) throw new Error(`група ${id}: дивний інтервал ${s0[1]}-${e0[1]}`);
+      const cm = at.match(/\bstts(\d)\b/), label = m[2].replace(/<[^>]+>/g, ' ').replace(/\d{1,2}:\d{2}/g, ' ').replace(/[-–—]/g, ' ').replace(/\s+/g, ' ').trim();
+      let code = cm ? STATUS[cm[1]] : undefined;
+      if (!code) {                                           // невідомий клас: дивимось на підпис (ON/OFF) всередині інтервалу
+        if (/можлив|ймовір/i.test(label)) { unknown.set(cm ? cm[1] : '?', label.slice(0, 30)); code = 'unk'; }   // «можливе відключення» не вважаємо ні світлом, ні відключенням
+        else if (/\boff\b|відключ|вимкн/i.test(label)) code = 'off';
+        else if (/\bon\b|є світло|світло буде|увімкн/i.test(label)) code = 'on';
+        else { unknown.set(cm ? cm[1] : '?', label.slice(0, 30)); code = 'unk'; }
+      }
       for (let k = Math.floor(st / 30); k < Math.ceil(e / 30); k++) sl[k] = RANK[code] > (RANK[sl[k]] ?? 0) ? code : sl[k] ?? code;   // відключення має пріоритет над «немає даних» і «є світло»
     }
     const gaps = sl.filter(x => x === null).length;
@@ -74,9 +83,9 @@ function parseAlerts(html) {
     if (gaps) { gapTotal += gaps; console.error(`  група ${id}: ${gaps} слотів без даних позначено як «немає даних»`); }
     groups[id] = sl.map(x => x ?? 'unk');
   }
-  if (unknown.size) console.error('  невідомі коди статусу stts' + [...unknown].join(',stts') + ' позначено як «немає даних»');
+  if (unknown.size) console.error('  невідомі статуси: ' + [...unknown].map(([c, l]) => `stts${c} («${l}»)`).join(', ') + ' позначено як «немає даних»');
   if (!Object.keys(groups).length) throw new NoSchedule(`груп із інтервалами не знайдено (сторінка ${html.length} байт, груп у розмітці: ${(parts.length - 1) / 2})`);
-  const warn = [gapTotal ? `слотів без даних: ${gapTotal}` : '', unknown.size ? `невідомі коди статусу: ${[...unknown].join(',')}` : ''].filter(Boolean).join('; ');
+  const warn = [gapTotal ? `слотів без даних: ${gapTotal}` : '', unknown.size ? `невідомі статуси: ${[...unknown].map(([c, l]) => `код ${c}${l ? ' «' + l + '»' : ''}`).join(', ')}` : ''].filter(Boolean).join('; ');
   return { date: dm[1], updatedAt, operator, groups, warn };
 }
 const enc = a => a.map(s => s === 'on' ? '1' : s === 'off' ? '0' : '?').join('');   // 48 символів на добу
