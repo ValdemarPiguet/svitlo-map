@@ -56,7 +56,7 @@ function parseAlerts(html) {
   const op = html.match(/за інформацією\s*<b>([^<]*)<\/b>/); const operator = op ? op[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#0?39;/g, "'").trim() : '';
   const body = html.slice(html.indexOf('id="shedule"'));
   const parts = body.split(/data-group-id="r\d+g([\d-]+)"/);
-  const groups = {}, STATUS = { 0: 'on', 2: 'off' }, RANK = { on: 1, unk: 2, off: 3 }, unknown = new Set(), skipped = [];
+  const groups = {}, STATUS = { 0: 'on', 2: 'off' }, RANK = { on: 1, unk: 2, off: 3 }, unknown = new Set(), skipped = []; let gapTotal = 0;
   const min = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   for (let i = 1; i < parts.length; i += 2) {
     const id = parts[i].replace('-', '.'), chunk = parts[i + 1].split('<div class="stat">')[0];
@@ -71,12 +71,13 @@ function parseAlerts(html) {
     }
     const gaps = sl.filter(x => x === null).length;
     if (gaps === 48) { skipped.push(id); continue; }
-    if (gaps) console.error(`  група ${id}: ${gaps} слотів без даних позначено як «немає даних»`);
+    if (gaps) { gapTotal += gaps; console.error(`  група ${id}: ${gaps} слотів без даних позначено як «немає даних»`); }
     groups[id] = sl.map(x => x ?? 'unk');
   }
   if (unknown.size) console.error('  невідомі коди статусу stts' + [...unknown].join(',stts') + ' позначено як «немає даних»');
   if (!Object.keys(groups).length) throw new NoSchedule(`груп із інтервалами не знайдено (сторінка ${html.length} байт, груп у розмітці: ${(parts.length - 1) / 2})`);
-  return { date: dm[1], updatedAt, operator, groups };
+  const warn = [gapTotal ? `слотів без даних: ${gapTotal}` : '', unknown.size ? `невідомі коди статусу: ${[...unknown].join(',')}` : ''].filter(Boolean).join('; ');
+  return { date: dm[1], updatedAt, operator, groups, warn };
 }
 const enc = a => a.map(s => s === 'on' ? '1' : s === 'off' ? '0' : '?').join('');   // 48 символів на добу
 
@@ -132,6 +133,7 @@ for (const [slug, name, doFetch = true, note] of REGIONS) {
     const ids = Object.keys(t.groups).sort((a, b) => a.localeCompare(b, 'uk', { numeric: true }));
     const queues = ids.map(id => ({ id, d: Object.fromEntries(days.filter(d => d.groups[id]).map(d => [d.date, enc(d.groups[id])])) }));
     const reg = { name, status: 'ok', operator: t.operator, updatedAt: t.updatedAt, emergency: false, queues };
+    if (t.warn) reg.warn = t.warn;
     if (slug === 'kyivska-oblast' && sv) {
       reg.emergency = sv.emergency;
       if (sv.date === t.date) {
