@@ -483,7 +483,7 @@ async function pullAlerts(){if(!ALERTS_URL)return;try{const r=await fetch(ALERTS
 pullAlerts();
 // ===== ЗВОРОТНИЙ ЗВ'ЯЗОК (форма надсилає лист через сервіс форм; адреса пошти на сторінці не публікується) =====
 const FBK_URL='https://quiet-brook-27e0.vetalikskorin.workers.dev';   // ← адреса вашого Cloudflare Worker (надсилає у Telegram), напр. https://svitlo-feedback.ВАШ.workers.dev
-const FBK_TG='';   // ← ваш публічний Telegram-нік без @ (необов'язково): тоді у формі з'явиться посилання «написати в Telegram»
+const FBK_TG='yee7y';   // ← ваш публічний Telegram-нік без @ (необов'язково): тоді у формі з'явиться посилання «написати в Telegram»
 const FBK_TIMEOUT=15000;   // скільки чекати відповіді Worker (мс), далі форма скаже, що сервер не відповів
 const FBK_KEY='';   // запасний варіант: Access Key з web3forms.com (лист на пошту). Працює, лише якщо FBK_URL порожній.
 (function(){
