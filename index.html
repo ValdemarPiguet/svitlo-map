@@ -538,7 +538,7 @@ const PYG=(()=>{const P=[],yT=PH*.86,yA=PH*.97;
  limb([0,PH*.92,0],[0,yA,0],.09,.07,P);ball([0,yA,0],.17,P);return mergeParts(P)})();
 const NODEG=new THREE.SphereGeometry(.45,18,12);NODEG.translate(0,PH*.97,0);const NODEM=new THREE.MeshLambertMaterial({color:0xdbe3f3});
 const BASEG=new THREE.CylinderGeometry(1.95,2.1,.14,40);BASEG.translate(0,.07,0);BASEG.scale(1,1,.55);
-const PYO=.78;   // прозорість опор (1 = непрозоро)
+const PYO=.58;   // прозорість опор (1 = непрозоро)
 const PYM=new THREE.MeshLambertMaterial({color:0xb8c0d0,transparent:true,opacity:PYO,depthWrite:false}),BSM=new THREE.MeshLambertMaterial({color:0xe4e8f0,transparent:true,opacity:PYO,depthWrite:false}),DPM=new THREE.MeshBasicMaterial({colorWrite:false});
 OBL.forEach(o=>{const g=new THREE.Group();g.add(...(PY?[new THREE.Mesh(PYG,DPM),new THREE.Mesh(BASEG,DPM),new THREE.Mesh(PYG,PYM),new THREE.Mesh(BASEG,BSM)]:[new THREE.Mesh(NODEG,NODEM)]));g.position.set(X(o.c[0]),1,Z(o.c[1]));g.scale.setScalar(.0001);scene.add(g);o.py=g});
 // --- провода: одна геометрія на всі ребра, положення оновлюємо лише коли опора змінила висоту
