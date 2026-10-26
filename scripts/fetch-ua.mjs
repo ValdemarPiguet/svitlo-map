@@ -67,7 +67,7 @@ function parseAlerts(html) {
     for (let ti = 0; ti < tags.length; ti++) {
       const tg = tags[ti], from = tg.index + tg[0].length, to = ti + 1 < tags.length ? tags[ti + 1].index : chunk.length;
       const m = [tg[0], tg[1], chunk.slice(from, Math.min(to, from + 300)).split('</div>')[0]];
-      const at = m[1], s0 = at.match(/data-start="(\d{1,2}:\d{2})"/), e0 = at.match(/data-end="(\d{1,2}:\d{2})"/);
+      const at = m[1], s0 = at.match(/data-start="\s*(\d{1,2}:\d{2})\s*"/), e0 = at.match(/data-end="\s*(\d{1,2}:\d{2})\s*"/);   // на сторінці трапляються пробіли всередині значень: data-end=" 16:00"
       if (!s0 || !e0) continue;
       let st = min(s0[1]), e = min(e0[1]);
       if (e === 0 && st > 0) e = 1440;                       // «22:00 - 00:00» означає кінець доби
@@ -207,7 +207,7 @@ for (const d of Object.keys(hist.days)) if (d < cutoff) delete hist.days[d];
 writeFileSync(HIST_PATH, JSON.stringify(hist));
 writeFileSync(OUT, JSON.stringify({
   fetchedAt: new Date().toISOString(),
-  parser: 'v5-labels',                                   // версія розбору: за цим полем у ua.json видно, який скрипт створив дані
+  parser: 'v7-spaces',                                   // версія розбору: за цим полем у ua.json видно, який скрипт створив дані
   source: { name: 'alerts.org.ua', url: 'https://alerts.org.ua/' },
   regions
 }));
