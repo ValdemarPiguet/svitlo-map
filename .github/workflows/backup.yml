@@ -1,0 +1,48 @@
+name: Backup history
+
+# Раз на тиждень зберігає копію data/history.json у теку backups/ (залишаються 12 останніх копій).
+# Ручний запуск: Actions → Backup history → Run workflow.
+on:
+  schedule:
+    - cron: '30 2 * * 1'      # понеділок 02:30 UTC (04:30 за Києвом влітку, 03:30 взимку)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data          # та сама черга, що й у робота даних, щоб не писати в репозиторій одночасно
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check history file
+        run: |
+          python3 - <<'PY'
+          import json,sys
+          d=json.load(open('data/history.json',encoding='utf-8'))
+          days=d.get('days') or {}
+          if not isinstance(days,dict) or not days:
+              sys.exit('history.json порожній або без поля days: копію не створюю')
+          print('днів в історії:',len(days),'| останній:',max(days))
+          PY
+
+      - name: Copy and rotate
+        run: |
+          set -e
+          mkdir -p backups
+          D=$(TZ=Europe/Kyiv date +%F)
+          cp data/history.json "backups/history-$D.json"
+          ls -1 backups/history-*.json | sort | head -n -12 | xargs -r rm -f
+          ls -1 backups
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backups
+          if git diff --cached --quiet; then echo "Без змін"; else git commit -m "Резервна копія історії $(TZ=Europe/Kyiv date +'%Y-%m-%d')" && git pull --rebase && git push; fi
